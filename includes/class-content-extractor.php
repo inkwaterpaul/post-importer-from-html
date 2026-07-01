@@ -9,38 +9,39 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class HPI_Content_Extractor {
+class POST_IMPORTER_Content_Extractor {
 
     /**
      * Extract all data from HTML file
      *
      * @param string $file_path Path to HTML file
+     * @param bool $use_blocks Whether to convert content to blocks (false when using block pattern)
      * @return array|WP_Error Array with extracted data or WP_Error on failure
      */
-    public static function extract_from_file($file_path) {
+    public static function extract_from_file($file_path, $use_blocks = true) {
         try {
             if (!file_exists($file_path)) {
-                return new WP_Error('file_not_found', __('File not found', 'html-post-importer'));
+                return new WP_Error('file_not_found', __('File not found', POST_IMPORTER_NAME ));
             }
 
             $html_content = @file_get_contents($file_path);
 
             if ($html_content === false) {
-                return new WP_Error('read_error', __('Could not read file', 'html-post-importer'));
+                return new WP_Error('read_error', __('Could not read file', POST_IMPORTER_NAME ));
             }
 
         // Extract data
         $title = self::extract_title($html_content);
-        $content = self::extract_content($html_content);
+        $content = self::extract_content($html_content, $use_blocks);
         $date = self::extract_date($html_content);
         $first_image = self::extract_first_image($html_content);
 
         if (empty($title)) {
-            return new WP_Error('no_title', __('No title found in HTML file', 'html-post-importer'));
+            return new WP_Error('no_title', __('No title found in HTML file', POST_IMPORTER_NAME ));
         }
 
         if (empty($content)) {
-            return new WP_Error('no_content', __('No content found in HTML file', 'html-post-importer'));
+            return new WP_Error('no_content', __('No content found in HTML file', POST_IMPORTER_NAME ));
         }
 
             return array(
@@ -86,9 +87,10 @@ class HPI_Content_Extractor {
      * Strips out inline styles, extra attributes, and cleans HTML
      *
      * @param string $html HTML content
+     * @param bool $use_blocks Whether to convert to WordPress blocks
      * @return string Cleaned content
      */
-    private static function extract_content($html) {
+    private static function extract_content($html, $use_blocks = true) {
         libxml_use_internal_errors(true);
         $dom = new DOMDocument();
         $dom->loadHTML('<?xml encoding="UTF-8">' . $html);
@@ -103,18 +105,25 @@ class HPI_Content_Extractor {
 
         $content_div = $page_content_divs->item(0);
 
-        // Get the inner HTML
+        // Get inner HTML, unwrapping any direct-child layout tables
         $inner_html = '';
         foreach ($content_div->childNodes as $child) {
-            $inner_html .= $dom->saveHTML($child);
+            if ($child instanceof DOMElement && strtolower($child->tagName) === 'table') {
+                $inner_html .= self::extract_table_content($child, $dom);
+            } else {
+                $inner_html .= $dom->saveHTML($child);
+            }
         }
 
-        // Clean the content
-        $cleaned_content = self::clean_html($inner_html);
+        // For patterns, use minimal cleaning to preserve structure
+        if (!$use_blocks) {
+            $cleaned_content = self::minimal_clean_html($inner_html);
+        } else {
+            $cleaned_content = self::clean_html($inner_html);
+        }
 
-        // Convert to WordPress blocks
+        // Always convert to WordPress blocks
         $block_content = self::convert_to_blocks($cleaned_content);
-
         return $block_content;
     }
 
@@ -157,6 +166,58 @@ class HPI_Content_Extractor {
         // (You may want to adjust this based on your needs)
 
         return $cleaned;
+    }
+
+    /**
+     * Minimal clean HTML content for block patterns
+     * Only removes problematic attributes like paraeid, paraid
+     * Preserves styles and classes that might be needed
+     *
+     * @param string $html HTML content
+     * @return string Minimally cleaned HTML
+     */
+    private static function minimal_clean_html($html) {
+        libxml_use_internal_errors(true);
+        $dom = new DOMDocument();
+        $dom->loadHTML('<?xml encoding="UTF-8">' . $html, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        libxml_clear_errors();
+
+        $xpath = new DOMXPath($dom);
+
+        // Only remove truly problematic attributes
+        $all_elements = $xpath->query('//*[@paraeid or @paraid]');
+
+        foreach ($all_elements as $element) {
+            // Remove only specific problematic attributes
+            $element->removeAttribute('paraeid');
+            $element->removeAttribute('paraid');
+        }
+
+        // Get cleaned HTML
+        $cleaned = $dom->saveHTML();
+
+        // Remove XML declaration and extra wrappers
+        $cleaned = preg_replace('/^<!DOCTYPE.+?>/', '', str_replace(array('<?xml encoding="UTF-8">', '<html>', '</html>', '<body>', '</body>'), '', $cleaned));
+
+        // Clean up extra whitespace
+        $cleaned = trim($cleaned);
+
+        return $cleaned;
+    }
+
+    /**
+     * Extract raw inner content from a layout table, concatenating all <td> cell contents.
+     * Nested tables inside cells are left intact and handled later by convert_to_blocks.
+     */
+    private static function extract_table_content($table, $dom) {
+        $html = '';
+        $cells = $table->getElementsByTagName('td');
+        foreach ($cells as $cell) {
+            foreach ($cell->childNodes as $child) {
+                $html .= $dom->saveHTML($child);
+            }
+        }
+        return $html;
     }
 
     /**
@@ -214,7 +275,7 @@ class HPI_Content_Extractor {
             case 'h5':
             case 'h6':
                 $level = substr($tag, 1);
-                return "<!-- wp:heading {\"level\":" . $level . "} -->\n" . $html . "\n<!-- /wp:heading -->\n\n";
+                return "<!-- wp:heading {\"level\":" . $level . ", \"fontSize\":\"h5\"} -->\n" . $html . "\n<!-- /wp:heading -->\n\n";
 
             case 'img':
                 $src = $node->getAttribute('src');
@@ -228,6 +289,23 @@ class HPI_Content_Extractor {
                 return "<!-- wp:list {\"ordered\":true} -->\n" . $html . "\n<!-- /wp:list -->\n\n";
 
             case 'blockquote':
+                // If the blockquote contains block-level children (div, heading, img etc.)
+                // it's being used as a layout/card container — process its children as blocks
+                $has_block_children = false;
+                foreach ($node->childNodes as $bqChild) {
+                    if ($bqChild->nodeType === XML_ELEMENT_NODE &&
+                        in_array(strtolower($bqChild->nodeName), ['div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'img', 'figure', 'ul', 'ol', 'table'])) {
+                        $has_block_children = true;
+                        break;
+                    }
+                }
+                if ($has_block_children) {
+                    $content = '';
+                    foreach ($node->childNodes as $child) {
+                        $content .= self::node_to_block($child);
+                    }
+                    return $content;
+                }
                 return "<!-- wp:quote -->\n" . $html . "\n<!-- /wp:quote -->\n\n";
 
             case 'pre':
@@ -235,6 +313,14 @@ class HPI_Content_Extractor {
                 return "<!-- wp:code -->\n<pre class=\"wp-block-code\"><code>" . htmlspecialchars($node->textContent) . "</code></pre>\n<!-- /wp:code -->\n\n";
 
             case 'table':
+                // If the table's only meaningful content is a single image, import as image block
+                $table_images = $node->getElementsByTagName('img');
+                $table_text = trim($node->textContent);
+                if ($table_images->length === 1 && $table_text === '') {
+                    $img_node = $table_images->item(0);
+                    $img_html = $node->ownerDocument->saveHTML($img_node);
+                    return "<!-- wp:image -->\n<figure class=\"wp-block-image\">" . $img_html . "</figure>\n<!-- /wp:image -->\n\n";
+                }
                 return "<!-- wp:table -->\n<figure class=\"wp-block-table\">" . $html . "</figure>\n<!-- /wp:table -->\n\n";
 
             case 'hr':
@@ -362,13 +448,13 @@ class HPI_Content_Extractor {
     public static function validate_file($file) {
         // Check if file exists
         if (!isset($file['tmp_name']) || empty($file['tmp_name'])) {
-            return new WP_Error('no_file', __('No file uploaded', 'html-post-importer'));
+            return new WP_Error('no_file', __('No file uploaded', POST_IMPORTER_NAME ));
         }
 
         // Check file extension
         $file_ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
         if (!in_array($file_ext, array('html', 'htm'))) {
-            return new WP_Error('invalid_extension', __('File must be HTML (.html or .htm)', 'html-post-importer'));
+            return new WP_Error('invalid_extension', __('File must be HTML (.html or .htm)', POST_IMPORTER_NAME ));
         }
 
         // Check MIME type
@@ -378,13 +464,13 @@ class HPI_Content_Extractor {
 
         $allowed_mime_types = array('text/html', 'text/plain', 'application/octet-stream');
         if (!in_array($mime_type, $allowed_mime_types)) {
-            return new WP_Error('invalid_mime', __('Invalid file type', 'html-post-importer'));
+            return new WP_Error('invalid_mime', __('Invalid file type', POST_IMPORTER_NAME ));
         }
 
         // Check file size (max 10MB)
         $max_size = 10 * 1024 * 1024; // 10MB
         if ($file['size'] > $max_size) {
-            return new WP_Error('file_too_large', __('File size exceeds 10MB limit', 'html-post-importer'));
+            return new WP_Error('file_too_large', __('File size exceeds 10MB limit', POST_IMPORTER_NAME ));
         }
 
         return true;

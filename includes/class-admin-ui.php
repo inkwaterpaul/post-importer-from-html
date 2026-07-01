@@ -9,198 +9,146 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class HPI_Admin_UI {
+class POST_IMPORTER_Admin_UI {
 
     /**
      * Render the main admin page
      */
     public static function render_page() {
+
         // Check user capabilities
         if (!current_user_can('manage_options')) {
-            wp_die(__('You do not have sufficient permissions to access this page.', 'html-post-importer'));
+            wp_die(__('You do not have sufficient permissions to access this page.', POST_IMPORTER_NAME));
         }
 
         ?>
-        <div class="wrap hpi-admin-wrap">
+        <div class="wrap pi-admin-wrap">
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
 
-            <div class="hpi-container">
-                <div class="hpi-card">
-                    <h2><?php _e('Import HTML Files as Posts', 'html-post-importer'); ?></h2>
+            <div class="pi-container">
+                <div class="pi-card">
+
+                    <h2><?php _e('Import HTML Files as Posts', POST_IMPORTER_NAME); ?></h2>
                     <p class="description">
-                        <?php _e('Select one or more HTML files to import as WordPress posts. The importer will extract:', 'html-post-importer'); ?>
+                        <?php _e('Select one or more HTML files to import as WordPress posts. The importer will extract:', POST_IMPORTER_NAME); ?>
                     </p>
-                    <ul class="hpi-features">
-                        <li><?php _e('Title from <code>&lt;h1&gt;</code> tag', 'html-post-importer'); ?></li>
-                        <li><?php _e('Content from <code>&lt;div class="page-content"&gt;</code>', 'html-post-importer'); ?></li>
-                        <li><?php _e('Post date from <code>&lt;small&gt;</code> tag', 'html-post-importer'); ?></li>
+                    <ul class="pi-features">
+                        <li><?php _e('Title from <code>&lt;h1&gt;</code> tag', POST_IMPORTER_NAME); ?></li>
+                        <li><?php _e('Content from <code>&lt;div class="page-content"&gt;</code>', POST_IMPORTER_NAME); ?></li>
+                        <li><?php _e('Date from <code>&lt;small&gt;</code> tag', POST_IMPORTER_NAME); ?></li>
+                        <li><?php _e('Featured image (the first image in the content) and any other images &mdash; uploaded in a second step after import', POST_IMPORTER_NAME); ?></li>
                     </ul>
 
-                    <form id="hpi-import-form" enctype="multipart/form-data">
+                    <form id="pi-import-form" enctype="multipart/form-data">
                         <table class="form-table">
                             <tr>
                                 <th scope="row">
-                                    <label for="hpi-files"><?php _e('Select HTML Files', 'html-post-importer'); ?></label>
+                                    <label for="pi-files"><?php _e('Select HTML Files', POST_IMPORTER_NAME); ?></label>
                                 </th>
                                 <td>
                                     <input type="file"
-                                           id="hpi-files"
-                                           name="hpi_files[]"
+                                           id="pi-files"
+                                           name="pi_files[]"
                                            accept=".html,.htm"
                                            multiple
                                            required>
                                     <p class="description">
-                                        <?php _e('You can select multiple HTML files at once. Files are processed in batches of 10 to handle large imports.', 'html-post-importer'); ?>
+                                        <?php _e('You can select multiple HTML files at once. Files are processed in batches of 10.', POST_IMPORTER_NAME); ?>
                                     </p>
                                 </td>
                             </tr>
 
                             <tr>
                                 <th scope="row">
-                                    <label for="hpi-post-status"><?php _e('Post Status', 'html-post-importer'); ?></label>
+                                    <label for="pi-post-status"><?php _e('Post Status', POST_IMPORTER_NAME); ?></label>
                                 </th>
                                 <td>
-                                    <select id="hpi-post-status" name="post_status">
-                                        <option value="draft"><?php _e('Draft', 'html-post-importer'); ?></option>
-                                        <option value="publish"><?php _e('Published', 'html-post-importer'); ?></option>
-                                        <option value="pending"><?php _e('Pending Review', 'html-post-importer'); ?></option>
+                                    <select id="pi-post-status" name="post_status">
+                                        <option value="draft"><?php _e('Draft', POST_IMPORTER_NAME); ?></option>
+                                        <option value="publish"><?php _e('Published', POST_IMPORTER_NAME); ?></option>
+                                        <option value="pending"><?php _e('Pending Review', POST_IMPORTER_NAME); ?></option>
                                     </select>
                                 </td>
                             </tr>
 
                             <tr>
                                 <th scope="row">
-                                    <label for="hpi-post-author"><?php _e('Post Author', 'html-post-importer'); ?></label>
-                                </th>
-                                <td>
-                                    <?php
-                                    wp_dropdown_users(array(
-                                        'name' => 'post_author',
-                                        'id' => 'hpi-post-author',
-                                        'selected' => get_current_user_id(),
-                                        'who' => 'authors'
-                                    ));
-                                    ?>
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <th scope="row">
-                                    <label for="hpi-post-category"><?php _e('Post Category', 'html-post-importer'); ?></label>
+                                    <label for="pi-category"><?php _e('Category', POST_IMPORTER_NAME); ?></label>
                                 </th>
                                 <td>
                                     <?php
                                     wp_dropdown_categories(array(
-                                        'name' => 'post_category',
-                                        'id' => 'hpi-post-category',
-                                        'hide_empty' => false,
-                                        'hierarchical' => true,
-                                        'show_option_none' => __('Select Category', 'html-post-importer'),
-                                        'option_none_value' => '0'
+                                        'name'             => 'category_id',
+                                        'id'               => 'pi-category',
+                                        'show_option_none' => __('None (Uncategorized)', POST_IMPORTER_NAME),
+                                        'option_none_value' => '0',
+                                        'hide_empty'       => false,
+                                        'selected'         => 0
                                     ));
                                     ?>
-                                </td>
-                            </tr>
-
-                            <tr>
-                                <th scope="row">
-                                    <label for="hpi-images-folder"><?php _e('Images Folder (Optional)', 'html-post-importer'); ?></label>
-                                </th>
-                                <td>
-                                    <input type="text"
-                                           id="hpi-images-folder"
-                                           name="images_folder"
-                                           class="regular-text"
-                                           placeholder="/path/to/images/folder">
-                                    <button type="button" id="hpi-browse-folder" class="button"><?php _e('Browse', 'html-post-importer'); ?></button>
                                     <p class="description">
-                                        <?php _e('Select the folder containing images. The first image from each HTML file will be set as the featured image.', 'html-post-importer'); ?>
+                                        <?php _e('Optionally assign all imported posts to a category.', POST_IMPORTER_NAME); ?>
                                     </p>
                                 </td>
                             </tr>
                         </table>
 
                         <p class="submit">
-                            <button type="submit" class="button button-primary button-large" id="hpi-import-btn">
+                            <button type="submit" class="button button-primary button-large" id="pi-import-btn">
                                 <span class="dashicons dashicons-upload"></span>
-                                <?php _e('Import Files', 'html-post-importer'); ?>
+                                <?php _e('Import Files', POST_IMPORTER_NAME); ?>
                             </button>
                         </p>
                     </form>
 
-                    <div id="hpi-preview" class="hpi-card hpi-preview" style="display: none;">
-                        <h3><?php _e('Preview - First File', 'html-post-importer'); ?></h3>
-                        <div id="hpi-preview-content">
-                            <div class="hpi-preview-loading">
+                    <div id="pi-preview" class="pi-card pi-preview" style="display: none;">
+                        <h3><?php _e('Preview - First File', POST_IMPORTER_NAME); ?></h3>
+                        <div id="pi-preview-content">
+                            <div class="pi-preview-loading">
                                 <span class="spinner is-active"></span>
-                                <p><?php _e('Loading preview...', 'html-post-importer'); ?></p>
+                                <p><?php _e('Loading preview...', POST_IMPORTER_NAME); ?></p>
                             </div>
                         </div>
                     </div>
 
-                    <div id="hpi-progress" class="hpi-progress" style="display: none;">
-                        <h3><?php _e('Import Progress', 'html-post-importer'); ?></h3>
-                        <div class="hpi-progress-bar">
-                            <div class="hpi-progress-bar-fill" id="hpi-progress-bar"></div>
+                    <div id="pi-progress" class="pi-progress" style="display: none;">
+                        <h3><?php _e('Import Progress', POST_IMPORTER_NAME); ?></h3>
+                        <div class="pi-progress-bar">
+                            <div class="pi-progress-bar-fill" id="pi-progress-bar"></div>
                         </div>
-                        <p class="hpi-progress-text" id="hpi-progress-text">0%</p>
+                        <p class="pi-progress-text" id="pi-progress-text">0%</p>
                     </div>
 
-                    <div id="hpi-results" class="hpi-results" style="display: none;">
-                        <h3><?php _e('Import Results', 'html-post-importer'); ?></h3>
-                        <div id="hpi-results-content"></div>
+                    <div id="pi-results" class="pi-results" style="display: none;">
+                        <h3><?php _e('Import Results', POST_IMPORTER_NAME); ?></h3>
+                        <div id="pi-results-content"></div>
                     </div>
+
                 </div>
 
-                <div class="hpi-sidebar">
-                    <div class="hpi-card">
-                        <h3><?php _e('Instructions', 'html-post-importer'); ?></h3>
+                <div class="pi-sidebar">
+                    <div class="pi-card">
+                        <h3><?php _e('How It Works', POST_IMPORTER_NAME); ?></h3>
                         <ol>
-                            <li><?php _e('Click "Select HTML Files" to choose files from your computer', 'html-post-importer'); ?></li>
-                            <li><?php _e('Configure post settings (status, author, category)', 'html-post-importer'); ?></li>
-                            <li><?php _e('Click "Import Files" to start the import process', 'html-post-importer'); ?></li>
-                            <li><?php _e('Wait for the import to complete', 'html-post-importer'); ?></li>
+                            <li><?php _e('Select one or more HTML files', POST_IMPORTER_NAME); ?></li>
+                            <li><?php _e('Choose post status and optional category', POST_IMPORTER_NAME); ?></li>
+                            <li><?php _e('Click "Import Files" to create the posts (title, content, date)', POST_IMPORTER_NAME); ?></li>
+                            <li><?php _e('A list of the images/documents referenced in the content will appear &mdash; select the folder(s) containing them and only the needed files will be uploaded', POST_IMPORTER_NAME); ?></li>
                         </ol>
                     </div>
 
-                    <div class="hpi-card">
-                        <h3><?php _e('Tips', 'html-post-importer'); ?></h3>
+                    <div class="pi-card">
+                        <h3><?php _e('HTML Requirements', POST_IMPORTER_NAME); ?></h3>
                         <ul>
-                            <li><?php _e('HTML files must contain an &lt;h1&gt; tag for the title', 'html-post-importer'); ?></li>
-                            <li><?php _e('Content should be within a &lt;div class="page-content"&gt;', 'html-post-importer'); ?></li>
-                            <li><?php _e('Date should be in a &lt;small&gt; tag', 'html-post-importer'); ?></li>
-                            <li><?php _e('Import as drafts first to review before publishing', 'html-post-importer'); ?></li>
+                            <li><?php _e('Must contain an <code>&lt;h1&gt;</code> for the title', POST_IMPORTER_NAME); ?></li>
+                            <li><?php _e('Content from <code>&lt;div class="page-content"&gt;</code>', POST_IMPORTER_NAME); ?></li>
+                            <li><?php _e('Import as drafts first to review', POST_IMPORTER_NAME); ?></li>
                         </ul>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Folder Browser Modal -->
-        <div id="hpi-folder-browser-modal" class="hpi-modal" style="display: none;">
-            <div class="hpi-modal-content">
-                <div class="hpi-modal-header">
-                    <h2><?php _e('Select Images Folder', 'html-post-importer'); ?></h2>
-                    <button type="button" class="hpi-modal-close">&times;</button>
-                </div>
-                <div class="hpi-modal-body">
-                    <div class="hpi-folder-path">
-                        <strong><?php _e('Current Path:', 'html-post-importer'); ?></strong>
-                        <span id="hpi-current-path">/</span>
-                    </div>
-                    <div class="hpi-folder-list" id="hpi-folder-list">
-                        <div class="hpi-folder-loading">
-                            <span class="spinner is-active"></span>
-                            <p><?php _e('Loading folders...', 'html-post-importer'); ?></p>
-                        </div>
-                    </div>
-                </div>
-                <div class="hpi-modal-footer">
-                    <button type="button" class="button button-secondary" id="hpi-folder-cancel"><?php _e('Cancel', 'html-post-importer'); ?></button>
-                    <button type="button" class="button button-primary" id="hpi-folder-select"><?php _e('Select This Folder', 'html-post-importer'); ?></button>
-                </div>
-            </div>
-        </div>
      <?php
     }
 }

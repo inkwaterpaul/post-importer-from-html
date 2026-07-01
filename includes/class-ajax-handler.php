@@ -9,16 +9,16 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class HPI_AJAX_Handler {
+class POST_IMPORTER_AJAX_Handler {
 
     /**
      * Initialize AJAX handlers
      */
     public static function init() {
-        add_action('wp_ajax_hpi_import_files', array(__CLASS__, 'handle_import'));
-        add_action('wp_ajax_hpi_process_file', array(__CLASS__, 'handle_process_file'));
-        add_action('wp_ajax_hpi_preview_file', array(__CLASS__, 'handle_preview'));
-        add_action('wp_ajax_hpi_browse_folders', array(__CLASS__, 'handle_browse_folders'));
+        add_action('wp_ajax_post_importer_import_files', array(__CLASS__, 'handle_import'));
+        add_action('wp_ajax_post_importer_process_file', array(__CLASS__, 'handle_process_file'));
+        add_action('wp_ajax_post_importer_preview_file', array(__CLASS__, 'handle_preview'));
+        add_action('wp_ajax_post_importer_upload_media', array(__CLASS__, 'handle_upload_media'));
     }
 
     /**
@@ -30,34 +30,35 @@ class HPI_AJAX_Handler {
 
         try {
             // Verify nonce
-            check_ajax_referer('hpi_import_nonce', 'nonce');
+            check_ajax_referer('post_importer_import_nonce', 'nonce');
 
             // Check user capabilities
             if (!current_user_can('manage_options')) {
                 ob_end_clean();
                 wp_send_json_error(array(
-                    'message' => __('You do not have permission to perform this action.', 'html-post-importer')
+                    'message' => __('You do not have permission to perform this action.', POST_IMPORTER_NAME )
                 ));
             }
 
             // Check if files were uploaded
-            if (empty($_FILES['hpi_files'])) {
+            if (empty($_FILES['pi_files'])) {
                 ob_end_clean();
                 wp_send_json_error(array(
-                    'message' => __('No files were uploaded.', 'html-post-importer')
+                    'message' => __('No files were uploaded.', POST_IMPORTER_NAME )
                 ));
             }
 
         // Get import options
+        // Images/documents are not uploaded at this stage - the importer records
+        // which ones are referenced, and they're uploaded afterwards via
+        // handle_upload_media() once we know exactly what's needed.
         $options = array(
             'post_status' => isset($_POST['post_status']) ? sanitize_text_field($_POST['post_status']) : 'draft',
-            'post_author' => isset($_POST['post_author']) ? absint($_POST['post_author']) : get_current_user_id(),
-            'post_category' => isset($_POST['post_category']) ? sanitize_text_field($_POST['post_category']) : '',
-            'images_folder' => isset($_POST['images_folder']) ? sanitize_text_field($_POST['images_folder']) : ''
+            'category_id' => isset($_POST['category_id']) ? absint($_POST['category_id']) : 0
         );
 
         // Process uploaded files
-        $files = $_FILES['hpi_files'];
+        $files = $_FILES['pi_files'];
         $file_count = count($files['name']);
         $file_paths = array();
 
@@ -75,7 +76,7 @@ class HPI_AJAX_Handler {
             );
 
             // Validate file - collect errors but don't stop
-            $validation = HPI_Content_Extractor::validate_file($file);
+            $validation = POST_IMPORTER_Content_Extractor::validate_file($file);
 
             if (is_wp_error($validation)) {
                 $validation_errors[] = array(
@@ -102,7 +103,7 @@ class HPI_AJAX_Handler {
             try {
                 // Suppress any PHP warnings/errors that might corrupt JSON
                 error_reporting(E_ERROR);
-                $result = HPI_Importer::import_file($file_info['path'], $options);
+                $result = POST_IMPORTER_Importer::import_file($file_info['path'], $options);
                 error_reporting(E_ALL);
 
                 if (is_wp_error($result)) {
@@ -114,7 +115,7 @@ class HPI_AJAX_Handler {
                     $results['success'][] = $result;
 
                     // Log the import
-                    HPI_Logger::log_import($result['post_id'], $file_info['name'], 'success');
+                    POST_IMPORTER_Logger::log_import($result['post_id'], $file_info['name'], 'success');
                 }
             } catch (Exception $e) {
                 // Catch any exceptions and add to failed list
@@ -137,7 +138,7 @@ class HPI_AJAX_Handler {
         // Send response
         wp_send_json_success(array(
             'message' => sprintf(
-                __('Import completed. %d succeeded, %d failed.', 'html-post-importer'),
+                __('Import completed. %d succeeded, %d failed.', POST_IMPORTER_NAME ),
                 count($results['success']),
                 count($results['failed'])
             ),
@@ -162,12 +163,12 @@ class HPI_AJAX_Handler {
      */
     public static function handle_process_file() {
         // Verify nonce
-        check_ajax_referer('hpi_import_nonce', 'nonce');
+        check_ajax_referer('post_importer_import_nonce', 'nonce');
 
         // Check user capabilities
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array(
-                'message' => __('You do not have permission to perform this action.', 'html-post-importer')
+                'message' => __('You do not have permission to perform this action.', POST_IMPORTER_NAME )
             ));
         }
 
@@ -179,7 +180,7 @@ class HPI_AJAX_Handler {
         // For now, we'll use the batch import method above
 
         wp_send_json_success(array(
-            'message' => __('File processed successfully', 'html-post-importer')
+            'message' => __('File processed successfully', POST_IMPORTER_NAME )
         ));
     }
 
@@ -188,26 +189,26 @@ class HPI_AJAX_Handler {
      */
     public static function handle_preview() {
         // Verify nonce
-        check_ajax_referer('hpi_import_nonce', 'nonce');
+        check_ajax_referer('post_importer_import_nonce', 'nonce');
 
         // Check user capabilities
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array(
-                'message' => __('You do not have permission to perform this action.', 'html-post-importer')
+                'message' => __('You do not have permission to perform this action.', POST_IMPORTER_NAME )
             ));
         }
 
         // Check if file was uploaded
         if (empty($_FILES['preview_file'])) {
             wp_send_json_error(array(
-                'message' => __('No file was uploaded for preview.', 'html-post-importer')
+                'message' => __('No file was uploaded for preview.', POST_IMPORTER_NAME )
             ));
         }
 
         $file = $_FILES['preview_file'];
 
         // Validate file
-        $validation = HPI_Content_Extractor::validate_file($file);
+        $validation = POST_IMPORTER_Content_Extractor::validate_file($file);
 
         if (is_wp_error($validation)) {
             wp_send_json_error(array(
@@ -216,7 +217,7 @@ class HPI_AJAX_Handler {
         }
 
         // Extract content from file
-        $extracted = HPI_Content_Extractor::extract_from_file($file['tmp_name']);
+        $extracted = POST_IMPORTER_Content_Extractor::extract_from_file($file['tmp_name']);
 
         if (is_wp_error($extracted)) {
             wp_send_json_error(array(
@@ -235,111 +236,93 @@ class HPI_AJAX_Handler {
             'title' => $extracted['title'],
             'content' => $content_preview,
             'content_full' => strlen($extracted['content']) . ' characters',
-            'date' => $extracted['date'] ? date('F j, Y', strtotime($extracted['date'])) : __('Not found', 'html-post-importer'),
-            'first_image' => !empty($extracted['first_image']) ? $extracted['first_image'] : __('Not found', 'html-post-importer'),
+            'date' => $extracted['date'] ? date('F j, Y', strtotime($extracted['date'])) : __('Not found', POST_IMPORTER_NAME ),
+            'first_image' => !empty($extracted['first_image']) ? $extracted['first_image'] : __('Not found', POST_IMPORTER_NAME ),
             'file_name' => $extracted['file_name']
         ));
     }
 
     /**
-     * Handle folder browsing AJAX request
+     * Recursively delete a temporary directory
      */
-    public static function handle_browse_folders() {
-        // Verify nonce
-        check_ajax_referer('hpi_import_nonce', 'nonce');
-
-        // Check user capabilities
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(array(
-                'message' => __('You do not have permission to perform this action.', 'html-post-importer')
-            ));
+    private static function cleanup_temp_dir($dir) {
+        if (!is_dir($dir)) {
+            return;
         }
-
-        // Get the requested path
-        $path = isset($_POST['path']) ? $_POST['path'] : '';
-
-        // Start from user's home directory or Downloads if no path specified
-        if (empty($path)) {
-            $path = $_SERVER['HOME'] ?? '/Users';
-            // Try to start at Downloads folder
-            $downloads = $path . '/Downloads';
-            if (is_dir($downloads)) {
-                $path = $downloads;
-            }
+        $items = array_diff((array) @scandir($dir), array('.', '..'));
+        foreach ($items as $item) {
+            $path = $dir . '/' . $item;
+            is_dir($path) ? self::cleanup_temp_dir($path) : @unlink($path);
         }
-
-        // Security: Prevent directory traversal attacks
-        $path = realpath($path);
-        if ($path === false) {
-            wp_send_json_error(array(
-                'message' => __('Invalid directory path.', 'html-post-importer')
-            ));
-        }
-
-        // Check if path is readable
-        if (!is_dir($path) || !is_readable($path)) {
-            wp_send_json_error(array(
-                'message' => __('Cannot read directory.', 'html-post-importer')
-            ));
-        }
-
-        $folders = array();
-        $files = scandir($path);
-
-        foreach ($files as $file) {
-            if ($file === '.' || $file === '..') {
-                continue;
-            }
-
-            $full_path = $path . '/' . $file;
-
-            if (is_dir($full_path) && is_readable($full_path)) {
-                $folders[] = array(
-                    'name' => $file,
-                    'path' => $full_path,
-                    'has_subdirs' => self::has_subdirectories($full_path)
-                );
-            }
-        }
-
-        // Sort folders alphabetically
-        usort($folders, function($a, $b) {
-            return strcasecmp($a['name'], $b['name']);
-        });
-
-        // Get parent directory
-        $parent = dirname($path);
-
-        wp_send_json_success(array(
-            'current_path' => $path,
-            'parent_path' => $parent !== $path ? $parent : null,
-            'folders' => $folders
-        ));
+        @rmdir($dir);
     }
 
     /**
-     * Check if directory has subdirectories
+     * Phase 2: accept uploaded image/doc files, match them to posts that have
+     * unresolved pending media, upload to the WP media library, and update content.
      */
-    private static function has_subdirectories($path) {
-        if (!is_dir($path) || !is_readable($path)) {
-            return false;
-        }
+    public static function handle_upload_media() {
+        ob_start();
+        $temp_dir = null;
 
-        $files = @scandir($path);
-        if ($files === false) {
-            return false;
-        }
+        try {
+            check_ajax_referer('post_importer_import_nonce', 'nonce');
 
-        foreach ($files as $file) {
-            if ($file === '.' || $file === '..') {
-                continue;
+            if (!current_user_can('manage_options')) {
+                ob_end_clean();
+                wp_send_json_error(array('message' => __('You do not have permission to perform this action.', POST_IMPORTER_NAME)));
             }
 
-            if (is_dir($path . '/' . $file)) {
-                return true;
+            if (empty($_FILES['media_files']['name'][0])) {
+                ob_end_clean();
+                wp_send_json_error(array('message' => __('No files were uploaded.', POST_IMPORTER_NAME)));
             }
-        }
 
-        return false;
+            $upload_dir = wp_upload_dir();
+            $temp_dir   = $upload_dir['basedir'] . '/pi-temp/' . uniqid();
+            wp_mkdir_p($temp_dir);
+
+            $files         = $_FILES['media_files'];
+            $files_by_name = array();
+
+            for ($i = 0; $i < count($files['name']); $i++) {
+                if ($files['error'][$i] !== UPLOAD_ERR_OK) {
+                    continue;
+                }
+                $filename                  = sanitize_file_name(basename($files['name'][$i]));
+                $target                    = $temp_dir . '/' . $filename;
+                move_uploaded_file($files['tmp_name'][$i], $target);
+                $files_by_name[$filename]  = $target;
+            }
+
+            @set_time_limit(300);
+
+            $results = POST_IMPORTER_Importer::process_pending_media($files_by_name);
+
+            self::cleanup_temp_dir($temp_dir);
+            $temp_dir = null;
+
+            ob_end_clean();
+
+            wp_send_json_success(array(
+                'message' => sprintf(
+                    __('%d image(s) and %d document(s) processed across %d post(s).', POST_IMPORTER_NAME),
+                    $results['images_updated'],
+                    $results['docs_updated'],
+                    $results['posts_updated']
+                ),
+                'results' => $results,
+            ));
+
+        } catch (Exception $e) {
+            if ($temp_dir) self::cleanup_temp_dir($temp_dir);
+            ob_end_clean();
+            wp_send_json_error(array('message' => 'Exception: ' . $e->getMessage()));
+        } catch (Error $e) {
+            if ($temp_dir) self::cleanup_temp_dir($temp_dir);
+            ob_end_clean();
+            wp_send_json_error(array('message' => 'Fatal error: ' . $e->getMessage()));
+        }
     }
+
 }

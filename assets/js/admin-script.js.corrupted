@@ -1,19 +1,19 @@
 /**
- * HTML Post Importer - Admin JavaScript
+ * HTML Page Importer - Admin JavaScript
  */
 
 (function($) {
     'use strict';
 
     $(document).ready(function() {
-        const $form = $('#hpi-import-form');
-        const $fileInput = $('#hpi-files');
-        const $submitBtn = $('#hpi-import-btn');
-        const $progress = $('#hpi-progress');
-        const $progressBar = $('#hpi-progress-bar');
-        const $progressText = $('#hpi-progress-text');
-        const $results = $('#hpi-results');
-        const $resultsContent = $('#hpi-results-content');
+        const $form = $('#pi-import-form');
+        const $fileInput = $('#pi-files');
+        const $submitBtn = $('#pi-import-btn');
+        const $progress = $('#pi-progress');
+        const $progressBar = $('#pi-progress-bar');
+        const $progressText = $('#pi-progress-text');
+        const $results = $('#pi-results');
+        const $resultsContent = $('#pi-results-content');
 
         // Handle form submission
         $form.on('submit', function(e) {
@@ -21,7 +21,7 @@
 
             // Validate file input
             if (!$fileInput[0].files.length) {
-                alert(hpiAjax.strings.error + ' Please select at least one file.');
+                alert(piAjax.strings.error + ' Please select at least one file.');
                 return;
             }
 
@@ -37,16 +37,16 @@
 
             // Get import options
             const options = {
-                post_status: $('#hpi-post-status').val(),
-                post_author: $('#hpi-post-author').val(),
-                post_category: $('#hpi-post-category').val(),
-                images_folder: $('#hpi-images-folder').val()
+                page_status: $('#pi-page-status').val(),
+                page_author: $('#pi-page-author').val(),
+                page_category: $('#pi-page-category').val(),
+                images_folder: $('#pi-images-folder').val()
             };
 
             // Disable form
             $submitBtn.prop('disabled', true).html(
                 '<span class="dashicons dashicons-upload"></span> ' +
-                hpiAjax.strings.processing
+                piAjax.strings.processing
             );
 
             // Show progress
@@ -70,7 +70,7 @@
             if (currentBatchIndex >= batches.length) {
                 // All batches processed
                 updateProgress(100, totalFiles, totalFiles);
-                
+
                 // Display final results
                 displayResults(aggregatedResults);
 
@@ -108,24 +108,24 @@
 
             // Prepare form data for this batch
             const formData = new FormData();
-            formData.append('action', 'hpi_import_files');
-            formData.append('nonce', hpiAjax.nonce);
-            formData.append('post_status', options.post_status);
-            formData.append('post_author', options.post_author);
-            formData.append('post_category', options.post_category);
+            formData.append('action', 'pi_import_files');
+            formData.append('nonce', piAjax.nonce);
+            formData.append('page_status', options.page_status);
+            formData.append('page_author', options.page_author);
+            formData.append('page_category', options.page_category);
             formData.append('images_folder', options.images_folder);
 
             // Add files from this batch
             batch.forEach(function(file) {
-                formData.append('hpi_files[]', file);
+                formData.append('pi_files[]', file);
             });
 
             // Send AJAX request for this batch
             $.ajax({
-                url: hpiAjax.ajaxurl,, processed, total, currentBatch, totalBatches) {
+                url: piAjax.ajaxurl,, processed, total, currentBatch, totalBatches) {
             percent = Math.round(percent);
             $progressBar.css('width', percent + '%');
-            
+
             let progressText = percent + '%';
             if (typeof processed !== 'undefined' && typeof total !== 'undefined') {
                 progressText += ' (' + processed + '/' + total + ' files';
@@ -134,7 +134,7 @@
                 }
                 progressText += ')';
             }
-            
+
             $progressText.text(progressText
                 contentType: false,
                 success: function(response) {
@@ -205,33 +205,33 @@
             let html = '';
 
             // Summary
-            html += '<div class="hpi-summary">';
-            html += '<div class="hpi-summary-item">';
-            html += '<span class="hpi-summary-value">' + results.total + '</span>';
-            html += '<span class="hpi-summary-label">Total Files</span>';
+            html += '<div class="pi-summary">';
+            html += '<div class="pi-summary-item">';
+            html += '<span class="pi-summary-value">' + results.total + '</span>';
+            html += '<span class="pi-summary-label">Total Files</span>';
             html += '</div>';
-            html += '<div class="hpi-summary-item">';
-            html += '<span class="hpi-summary-value" style="color: #00a32a;">' + results.success.length + '</span>';
-            html += '<span class="hpi-summary-label">Successful</span>';
+            html += '<div class="pi-summary-item">';
+            html += '<span class="pi-summary-value" style="color: #00a32a;">' + results.success.length + '</span>';
+            html += '<span class="pi-summary-label">Successful</span>';
             html += '</div>';
-            html += '<div class="hpi-summary-item">';
-            html += '<span class="hpi-summary-value" style="color: #d63638;">' + results.failed.length + '</span>';
-            html += '<span class="hpi-summary-label">Failed</span>';
+            html += '<div class="pi-summary-item">';
+            html += '<span class="pi-summary-value" style="color: #d63638;">' + results.failed.length + '</span>';
+            html += '<span class="pi-summary-label">Failed</span>';
             html += '</div>';
             html += '</div>';
 
             // Successful imports
             if (results.success.length > 0) {
                 html += '<h4 class="success-header">✓ Successfully Imported</h4>';
-                html += '<ul class="hpi-results-list">';
+                html += '<ul class="pi-results-list">';
 
                 results.success.forEach(function(item) {
                     html += '<li class="success">';
                     html += '<div class="result-info">';
-                    html += '<div class="result-title">' + escapeHtml(item.post_title) + '</div>';
+                    html += '<div class="result-title">' + escapeHtml(item.page_title) + '</div>';
                     html += '<div class="result-file">' + escapeHtml(item.file_name);
-                    if (item.post_date) {
-                        html += ' <span class="result-date">• Date: ' + escapeHtml(item.post_date) + '</span>';
+                    if (item.page_date) {
+                        html += ' <span class="result-date">• Date: ' + escapeHtml(item.page_date) + '</span>';
                     }
                     if (item.featured_image) {
                         html += ' <span class="result-date">• Image: ' + escapeHtml(item.featured_image) + '</span>';
@@ -252,13 +252,13 @@
             if (results.failed.length > 0) {
                 html += '<h4 class="failed-header">⚠ Failed Imports - Please Review These Files</h4>';
                 html += '<div style="margin-bottom: 10px;">';
-                html += '<button type="button" class="button button-small hpi-copy-failed-files" data-files="' +
+                html += '<button type="button" class="button button-small pi-copy-failed-files" data-files="' +
                         escapeHtml(JSON.stringify(results.failed.map(item => item.file))) + '">';
                 html += '<span class="dashicons dashicons-clipboard" style="font-size: 16px; line-height: 1.2;"></span> ';
                 html += 'Copy Failed Files List';
                 html += '</button>';
                 html += '</div>';
-                html += '<ul class="hpi-results-list">';
+                html += '<ul class="pi-results-list">';
 
                 results.failed.forEach(function(item) {
                     html += '<li class="error">';
@@ -275,7 +275,7 @@
             $resultsContent.html(html);
 
             // Add click handler for copy button
-            $('.hpi-copy-failed-files').on('click', function() {
+            $('.pi-copy-failed-files').on('click', function() {
                 const filesJson = $(this).data('files');
                 const files = JSON.parse(filesJson);
                 const filesList = files.join('\n');
@@ -312,7 +312,7 @@
 
         // Show notice
         function showNotice(type, message) {
-            const $notice = $('<div class="hpi-notice ' + type + '">' + escapeHtml(message) + '</div>');
+            const $notice = $('<div class="pi-notice ' + type + '">' + escapeHtml(message) + '</div>');
             $form.before($notice);
 
             setTimeout(function() {
@@ -347,19 +347,19 @@
                 previewFirstFile(this.files[0]);
             } else {
                 // Hide preview if no files selected
-                $('#hpi-preview').hide();
+                $('#pi-preview').hide();
             }
         });
 
         // Preview first file function
         function previewFirstFile(file) {
-            const $preview = $('#hpi-preview');
-            const $previewContent = $('#hpi-preview-content');
+            const $preview = $('#pi-preview');
+            const $previewContent = $('#pi-preview-content');
 
             // Show preview section with loading state
             $preview.show();
             $previewContent.html(
-                '<div class="hpi-preview-loading">' +
+                '<div class="pi-preview-loading">' +
                 '<span class="spinner is-active"></span>' +
                 '<p>Loading preview...</p>' +
                 '</div>'
@@ -370,13 +370,13 @@
 
             // Prepare form data
             const formData = new FormData();
-            formData.append('action', 'hpi_preview_file');
-            formData.append('nonce', hpiAjax.nonce);
+            formData.append('action', 'pi_preview_file');
+            formData.append('nonce', piAjax.nonce);
             formData.append('preview_file', file);
 
             // Send AJAX request
             $.ajax({
-                url: hpiAjax.ajaxurl,
+                url: piAjax.ajaxurl,
                 type: 'POST',
                 data: formData,
                 processData: false,
@@ -387,7 +387,7 @@
                     } else {
                         const errorMsg = (response.data && response.data.message) ? response.data.message : 'Could not load preview';
                         $previewContent.html(
-                            '<div class="hpi-notice error">' +
+                            '<div class="pi-notice error">' +
                             '<strong>Preview Error:</strong> ' + escapeHtml(errorMsg) +
                             '</div>'
                         );
@@ -395,7 +395,7 @@
                 },
                 error: function(xhr, status, error) {
                     $previewContent.html(
-                        '<div class="hpi-notice error">' +
+                        '<div class="pi-notice error">' +
                         '<strong>Error:</strong> Could not load preview. ' + escapeHtml(error) +
                         '</div>'
                     );
@@ -405,89 +405,89 @@
 
         // Display preview data
         function displayPreview(data) {
-            let html = '<div class="hpi-preview-data">';
+            let html = '<div class="pi-preview-data">';
 
-            html += '<div class="hpi-preview-item">';
+            html += '<div class="pi-preview-item">';
             html += '<strong>File:</strong> ' + escapeHtml(data.file_name);
             html += '</div>';
 
-            html += '<div class="hpi-preview-item">';
-            html += '<strong>Title:</strong> <span class="hpi-preview-title">' + escapeHtml(data.title) + '</span>';
+            html += '<div class="pi-preview-item">';
+            html += '<strong>Title:</strong> <span class="pi-preview-title">' + escapeHtml(data.title) + '</span>';
             html += '</div>';
 
-            html += '<div class="hpi-preview-item">';
-            html += '<strong>Date:</strong> <span class="hpi-preview-date">' + escapeHtml(data.date) + '</span>';
+            html += '<div class="pi-preview-item">';
+            html += '<strong>Date:</strong> <span class="pi-preview-date">' + escapeHtml(data.date) + '</span>';
             html += '</div>';
 
-            html += '<div class="hpi-preview-item">';
-            html += '<strong>First Image:</strong> <span class="hpi-preview-date">' + escapeHtml(data.first_image) + '</span>';
+            html += '<div class="pi-preview-item">';
+            html += '<strong>First Image:</strong> <span class="pi-preview-date">' + escapeHtml(data.first_image) + '</span>';
             html += '</div>';
 
-            html += '<div class="hpi-preview-item">';
-            html += '<strong>Content Preview:</strong> <span class="hpi-preview-length">(' + data.content_full + ')</span>';
-            html += '<div class="hpi-preview-content-text">' + data.content + '</div>';
+            html += '<div class="pi-preview-item">';
+            html += '<strong>Content Preview:</strong> <span class="pi-preview-length">(' + data.content_full + ')</span>';
+            html += '<div class="pi-preview-content-text">' + data.content + '</div>';
             html += '</div>';
 
-            html += '<div class="hpi-notice success">';
+            html += '<div class="pi-notice success">';
             html += '<strong>✓ Preview successful!</strong> The data looks good. You can now proceed with the import.';
             html += '</div>';
 
             html += '</div>';
 
-            $('#hpi-preview-content').html(html);
+            $('#pi-preview-content').html(html);
         }
 
         // Folder browser functionality
         let currentFolderPath = '';
 
         // Browse folder button handler
-        $('#hpi-browse-folder').on('click', function() {
+        $('#pi-browse-folder').on('click', function() {
             openFolderBrowser();
         });
 
         // Open folder browser modal
         function openFolderBrowser(path) {
-            $('#hpi-folder-browser-modal').fadeIn();
+            $('#pi-folder-browser-modal').fadeIn();
             loadFolders(path || '');
         }
 
         // Close modal handlers
-        $('#hpi-folder-browser-modal .hpi-modal-close, #hpi-folder-cancel').on('click', function() {
-            $('#hpi-folder-browser-modal').fadeOut();
+        $('#pi-folder-browser-modal .pi-modal-close, #pi-folder-cancel').on('click', function() {
+            $('#pi-folder-browser-modal').fadeOut();
         });
 
         // Click outside modal to close
-        $('#hpi-folder-browser-modal').on('click', function(e) {
-            if ($(e.target).is('#hpi-folder-browser-modal')) {
+        $('#pi-folder-browser-modal').on('click', function(e) {
+            if ($(e.target).is('#pi-folder-browser-modal')) {
                 $(this).fadeOut();
             }
         });
 
         // Select folder button
-        $('#hpi-folder-select').on('click', function() {
+        $('#pi-folder-select').on('click', function() {
             if (currentFolderPath) {
-                $('#hpi-images-folder').val(currentFolderPath);
-                $('#hpi-folder-browser-modal').fadeOut();
+                $('#pi-images-folder').val(currentFolderPath);
+                $('#pi-folder-browser-modal').fadeOut();
             }
         });
 
         // Load folders via AJAX
         function loadFolders(path) {
-            const $folderList = $('#hpi-folder-list');
+            const $folderList = $('#pi-folder-list');
 
             $folderList.html(
-                '<div class="hpi-folder-loading">' +
+                '<div class="pi-folder-loading">' +
                 '<span class="spinner is-active"></span>' +
                 '<p>Loading folders...</p>' +
                 '</div>'
             );
 
             $.ajax({
-                url: hpiAjax.ajaxurl,
+                url: piAjax.ajaxurl,
                 type: 'POST',
                 data: {
-                    action: 'hpi_browse_folders',
-                    nonce: hpiAjax.nonce,
+                    action: 'pi_browse_folders',
+                    nonce: piAjax.nonce,
                     path: path
                 },
                 success: function(response) {
@@ -496,7 +496,7 @@
                     } else {
                         const errorMsg = (response.data && response.data.message) ? response.data.message : 'Could not load folders';
                         $folderList.html(
-                            '<div class="hpi-folder-empty">' +
+                            '<div class="pi-folder-empty">' +
                             '<strong>Error:</strong> ' + escapeHtml(errorMsg) +
                             '</div>'
                         );
@@ -504,7 +504,7 @@
                 },
                 error: function() {
                     $folderList.html(
-                        '<div class="hpi-folder-empty">' +
+                        '<div class="pi-folder-empty">' +
                         '<strong>Error:</strong> Could not load folders.' +
                         '</div>'
                     );
@@ -515,29 +515,29 @@
         // Display folders in the list
         function displayFolders(data) {
             currentFolderPath = data.current_path;
-            $('#hpi-current-path').text(data.current_path);
+            $('#pi-current-path').text(data.current_path);
 
-            const $folderList = $('#hpi-folder-list');
+            const $folderList = $('#pi-folder-list');
             let html = '';
 
             // Add parent directory option if available
             if (data.parent_path) {
-                html += '<div class="hpi-folder-item parent-folder" data-path="' + escapeHtml(data.parent_path) + '">';
-                html += '<span class="hpi-folder-icon">↰</span>';
-                html += '<span class="hpi-folder-name">..</span>';
+                html += '<div class="pi-folder-item parent-folder" data-path="' + escapeHtml(data.parent_path) + '">';
+                html += '<span class="pi-folder-icon">↰</span>';
+                html += '<span class="pi-folder-name">..</span>';
                 html += '</div>';
             }
 
             // Add folders
             if (data.folders.length === 0) {
-                html += '<div class="hpi-folder-empty">No accessible subdirectories found.</div>';
+                html += '<div class="pi-folder-empty">No accessible subdirectories found.</div>';
             } else {
                 data.folders.forEach(function(folder) {
-                    html += '<div class="hpi-folder-item" data-path="' + escapeHtml(folder.path) + '">';
-                    html += '<span class="hpi-folder-icon">📁</span>';
-                    html += '<span class="hpi-folder-name">' + escapeHtml(folder.name) + '</span>';
+                    html += '<div class="pi-folder-item" data-path="' + escapeHtml(folder.path) + '">';
+                    html += '<span class="pi-folder-icon">📁</span>';
+                    html += '<span class="pi-folder-name">' + escapeHtml(folder.name) + '</span>';
                     if (folder.has_subdirs) {
-                        html += '<span class="hpi-folder-arrow">→</span>';
+                        html += '<span class="pi-folder-arrow">→</span>';
                     }
                     html += '</div>';
                 });
@@ -546,7 +546,7 @@
             $folderList.html(html);
 
             // Add click handlers to folder items
-            $('.hpi-folder-item').on('click', function() {
+            $('.pi-folder-item').on('click', function() {
                 const path = $(this).data('path');
                 loadFolders(path);
             });

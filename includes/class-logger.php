@@ -9,12 +9,12 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class HPI_Logger {
+class POST_IMPORTER_Logger {
 
     /**
      * Log table name
      */
-    const TABLE_NAME = 'hpi_import_log';
+    const TABLE_NAME = 'post_importer_import_log';
 
     /**
      * Create log table on plugin activation
@@ -40,6 +40,19 @@ class HPI_Logger {
 
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
+    }
+
+    /**
+     * Ensure the log table exists, creating it if this is an already-active
+     * install upgrading from a version that used a different table name/schema.
+     */
+    public static function maybe_upgrade_table() {
+        if (get_option('post_importer_db_version') === POST_IMPORTER_VERSION) {
+            return;
+        }
+
+        self::create_table();
+        update_option('post_importer_db_version', POST_IMPORTER_VERSION);
     }
 
     /**
@@ -176,4 +189,4 @@ class HPI_Logger {
 }
 
 // Create table on plugin activation
-register_activation_hook(HPI_PLUGIN_FILE, array('HPI_Logger', 'create_table'));
+register_activation_hook(POST_IMPORTER_PLUGIN_FILE, array('POST_IMPORTER_Logger', 'create_table'));

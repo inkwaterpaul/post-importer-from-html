@@ -6,91 +6,88 @@
     'use strict';
 
     $(document).ready(function() {
-        const $form = $('#hpi-import-form');
-        const $fileInput = $('#hpi-files');
-        const $submitBtn = $('#hpi-import-btn');
-        const $progress = $('#hpi-progress');
-        const $progressBar = $('#hpi-progress-bar');
-        const $progressText = $('#hpi-progress-text');
-        const $results = $('#hpi-results');
-        const $resultsContent = $('#hpi-results-content');
 
-        // Handle form submission
+        // =========================================================
+        // File Upload
+        // =========================================================
+
+        const $form = $('#pi-import-form');
+        const $fileInput = $('#pi-files');
+        const $submitBtn = $('#pi-import-btn');
+        const $progress = $('#pi-progress');
+        const $progressBar = $('#pi-progress-bar');
+        const $progressText = $('#pi-progress-text');
+        const $results = $('#pi-results');
+        const $resultsContent = $('#pi-results-content');
+
         $form.on('submit', function(e) {
             e.preventDefault();
 
-            // Validate file input
             if (!$fileInput[0].files.length) {
-                alert(hpiAjax.strings.error + ' Please select at least one file.');
+                alert(postImporterAjax.strings.error + ' Please select at least one file.');
                 return;
             }
 
             const files = Array.from($fileInput[0].files);
             const totalFiles = files.length;
-            const batchSize = 10; // Process 10 files at a time
+            const batchSize = 10;
             const batches = [];
 
-            // Split files into batches
             for (let i = 0; i < totalFiles; i += batchSize) {
                 batches.push(files.slice(i, i + batchSize));
             }
 
-            // Get import options
             const options = {
-                post_status: $('#hpi-post-status').val(),
-                post_author: $('#hpi-post-author').val(),
-                post_category: $('#hpi-post-category').val(),
-                images_folder: $('#hpi-images-folder').val()
+                post_status: $('#pi-post-status').val(),
+                category_id: $('#pi-category').val()
             };
 
-            // Disable form
             $submitBtn.prop('disabled', true).html(
-                '<span class="dashicons dashicons-upload"></span> ' +
-                hpiAjax.strings.processing
+                '<span class="dashicons dashicons-upload"></span> ' + postImporterAjax.strings.processing
             );
 
-            // Show progress
             $progress.show();
             $results.hide();
             updateProgress(0, 0, totalFiles);
 
-            // Aggregate results
             const aggregatedResults = {
                 success: [],
                 failed: [],
                 total: totalFiles
             };
 
-            // Process batches sequentially
             processBatches(batches, 0, options, aggregatedResults, totalFiles);
         });
 
-        // Process batches of files
         function processBatches(batches, currentBatchIndex, options, aggregatedResults, totalFiles) {
             if (currentBatchIndex >= batches.length) {
-                // All batches processed
                 updateProgress(100, totalFiles, totalFiles);
+                displayResults(aggregatedResults, $resultsContent, $results);
 
-                // Display final results
-                displayResults(aggregatedResults);
-
-                // Reset form
                 $form[0].reset();
 
-                // Show success message
-                const message = sprintf(
+                showNotice('success', sprintf(
                     'Import completed. %d succeeded, %d failed.',
                     aggregatedResults.success.length,
                     aggregatedResults.failed.length
-                );
-                showNotice('success', message);
+                ));
 
-                // Re-enable form
                 $submitBtn.prop('disabled', false).html(
                     '<span class="dashicons dashicons-upload"></span> Import Files'
                 );
 
-                // Hide progress after a delay
+                const pendingImages = [];
+                const pendingDocs = [];
+                aggregatedResults.success.forEach(function(item) {
+                    if (item.pending_images) pendingImages.push(...item.pending_images);
+                    if (item.pending_docs) pendingDocs.push(...item.pending_docs);
+                });
+                const uniqueImages = Array.from(new Set(pendingImages));
+                const uniqueDocs = Array.from(new Set(pendingDocs));
+                if (uniqueImages.length > 0 || uniqueDocs.length > 0) {
+                    showPendingMediaUI(uniqueImages, uniqueDocs, $results);
+                }
+
                 setTimeout(function() {
                     $progress.fadeOut();
                 }, 2000);
@@ -99,56 +96,41 @@
             }
 
             const batch = batches[currentBatchIndex];
-            const batchNumber = currentBatchIndex + 1;
-            const totalBatches = batches.length;
-
-            // Update progress text
             const processedFiles = currentBatchIndex * 10;
-            updateProgress((processedFiles / totalFiles) * 100, processedFiles, totalFiles, batchNumber, totalBatches);
+            updateProgress((processedFiles / totalFiles) * 100, processedFiles, totalFiles, currentBatchIndex + 1, batches.length);
 
-            // Prepare form data for this batch
             const formData = new FormData();
-            formData.append('action', 'hpi_import_files');
-            formData.append('nonce', hpiAjax.nonce);
+            formData.append('action', 'post_importer_import_files');
+            formData.append('nonce', postImporterAjax.nonce);
             formData.append('post_status', options.post_status);
-            formData.append('post_author', options.post_author);
-            formData.append('post_category', options.post_category);
-            formData.append('images_folder', options.images_folder);
+            formData.append('category_id', options.category_id);
 
-            // Add files from this batch
             batch.forEach(function(file) {
-                formData.append('hpi_files[]', file);
+                formData.append('pi_files[]', file);
             });
 
-            // Send AJAX request for this batch
             $.ajax({
-                url: hpiAjax.ajaxurl,
+                url: postImporterAjax.ajaxurl,
                 type: 'POST',
                 data: formData,
                 processData: false,
                 contentType: false,
                 success: function(response) {
                     if (response.success && response.data.results) {
-                        // Aggregate results from this batch
                         aggregatedResults.success.push(...response.data.results.success);
                         aggregatedResults.failed.push(...response.data.results.failed);
                     } else {
-                        // If batch failed, mark all files in batch as failed
                         batch.forEach(function(file) {
                             aggregatedResults.failed.push({
                                 file: file.name,
-                                error: response.data.message || 'Batch processing failed'
+                                error: (response.data && response.data.message) || 'Batch processing failed'
                             });
                         });
                     }
-
-                    // Process next batch
                     processBatches(batches, currentBatchIndex + 1, options, aggregatedResults, totalFiles);
                 },
                 error: function(xhr, status, error) {
-                    // Try to parse error response
                     let errorMessage = error;
-
                     if (xhr.responseText) {
                         try {
                             const response = JSON.parse(xhr.responseText);
@@ -157,31 +139,16 @@
                             }
                         } catch (e) {
                             errorMessage = 'Server error occurred';
-                            console.error('Response text:', xhr.responseText.substring(0, 500));
                         }
                     }
-
-                    // Mark all files in this batch as failed
                     batch.forEach(function(file) {
-                        aggregatedResults.failed.push({
-                            file: file.name,
-                            error: errorMessage
-                        });
+                        aggregatedResults.failed.push({ file: file.name, error: errorMessage });
                     });
-
-                    // Continue to next batch despite error
                     processBatches(batches, currentBatchIndex + 1, options, aggregatedResults, totalFiles);
                 }
             });
         }
 
-        // Simple sprintf function
-        function sprintf(format, ...args) {
-            let i = 0;
-            return format.replace(/%[sd]/g, () => args[i++]);
-        }
-
-        // Update progress bar
         function updateProgress(percent, processed, total, currentBatch, totalBatches) {
             percent = Math.round(percent);
             $progressBar.css('width', percent + '%');
@@ -194,106 +161,348 @@
                 }
                 progressText += ')';
             }
-
             $progressText.text(progressText);
         }
 
+        // File preview on selection
+        $fileInput.on('change', function() {
+            if (this.files.length > 0) {
+                previewFirstFile(this.files[0]);
+            } else {
+                $('#pi-preview').hide();
+            }
+        });
+
+        function previewFirstFile(file) {
+            const $preview = $('#pi-preview');
+            const $previewContent = $('#pi-preview-content');
+
+            $preview.show();
+            $previewContent.html(
+                '<div class="pi-preview-loading"><span class="spinner is-active"></span><p>Loading preview...</p></div>'
+            );
+            $results.hide();
+
+            const formData = new FormData();
+            formData.append('action', 'post_importer_preview_file');
+            formData.append('nonce', postImporterAjax.nonce);
+            formData.append('preview_file', file);
+
+            $.ajax({
+                url: postImporterAjax.ajaxurl,
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(response) {
+                    if (response.success) {
+                        let html = '<div class="pi-preview-data">';
+                        html += '<div class="pi-preview-item"><strong>File:</strong> ' + escapeHtml(response.data.file_name) + '</div>';
+                        html += '<div class="pi-preview-item"><strong>Title:</strong> <span class="pi-preview-title">' + escapeHtml(response.data.title) + '</span></div>';
+                        html += '<div class="pi-preview-item"><strong>Date:</strong> ' + escapeHtml(response.data.date) + '</div>';
+                        html += '<div class="pi-preview-item"><strong>First Image:</strong> ' + escapeHtml(response.data.first_image) + '</div>';
+                        html += '<div class="pi-preview-item"><strong>Content Preview:</strong> <span class="pi-preview-length">(' + response.data.content_full + ')</span>';
+                        html += '<div class="pi-preview-content-text">' + response.data.content + '</div></div>';
+                        html += '<div class="pi-notice success"><strong>✓ Preview successful!</strong> Looks good.</div>';
+                        html += '</div>';
+                        $previewContent.html(html);
+                    } else {
+                        const msg = (response.data && response.data.message) ? response.data.message : 'Could not load preview';
+                        $previewContent.html('<div class="pi-notice error"><strong>Preview Error:</strong> ' + escapeHtml(msg) + '</div>');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    $previewContent.html('<div class="pi-notice error"><strong>Error:</strong> Could not load preview. ' + escapeHtml(error) + '</div>');
+                }
+            });
+        }
+
+        // =========================================================
         // Display results
-        function displayResults(results) {
-            $results.show();
+        // =========================================================
 
-            let html = '';
+        function displayResults(results, $container, $wrapper) {
+            $wrapper.show();
 
-            // Summary
-            html += '<div class="hpi-summary">';
-            html += '<div class="hpi-summary-item">';
-            html += '<span class="hpi-summary-value">' + results.total + '</span>';
-            html += '<span class="hpi-summary-label">Total Files</span>';
-            html += '</div>';
-            html += '<div class="hpi-summary-item">';
-            html += '<span class="hpi-summary-value" style="color: #00a32a;">' + results.success.length + '</span>';
-            html += '<span class="hpi-summary-label">Successful</span>';
-            html += '</div>';
-            html += '<div class="hpi-summary-item">';
-            html += '<span class="hpi-summary-value" style="color: #d63638;">' + results.failed.length + '</span>';
-            html += '<span class="hpi-summary-label">Failed</span>';
-            html += '</div>';
+            let html = '<div class="pi-summary">';
+            html += '<div class="pi-summary-item"><span class="pi-summary-value">' + (results.total || (results.success.length + results.failed.length)) + '</span><span class="pi-summary-label">Total Files</span></div>';
+            html += '<div class="pi-summary-item"><span class="pi-summary-value" style="color:#00a32a;">' + results.success.length + '</span><span class="pi-summary-label">Successful</span></div>';
+            html += '<div class="pi-summary-item"><span class="pi-summary-value" style="color:#d63638;">' + results.failed.length + '</span><span class="pi-summary-label">Failed</span></div>';
             html += '</div>';
 
-            // Successful imports
             if (results.success.length > 0) {
-                html += '<h4 class="success-header">✓ Successfully Imported</h4>';
-                html += '<ul class="hpi-results-list">';
-
+                html += '<h4 class="success-header">&#10003; Successfully Imported</h4>';
+                html += '<ul class="pi-results-list">';
                 results.success.forEach(function(item) {
                     html += '<li class="success">';
                     html += '<div class="result-info">';
                     html += '<div class="result-title">' + escapeHtml(item.post_title) + '</div>';
                     html += '<div class="result-file">' + escapeHtml(item.file_name);
-                    if (item.post_date) {
-                        html += ' <span class="result-date">• Date: ' + escapeHtml(item.post_date) + '</span>';
-                    }
                     if (item.featured_image) {
-                        html += ' <span class="result-date">• Image: ' + escapeHtml(item.featured_image) + '</span>';
+                        html += ' <span class="result-date">&bull; Image: ' + escapeHtml(item.featured_image) + '</span>';
                     }
-                    html += '</div>';
-                    html += '</div>';
+                    html += '</div></div>';
                     html += '<div class="result-actions">';
-                    html += '<a href="' + item.edit_url + '" class="button button-small">Edit</a>';
-                    html += '<a href="' + item.view_url + '" class="button button-small" target="_blank">View</a>';
-                    html += '</div>';
-                    html += '</li>';
+                    html += '<a href="' + escapeHtml(item.edit_url) + '" class="button button-small">Edit</a> ';
+                    html += '<a href="' + escapeHtml(item.view_url) + '" class="button button-small" target="_blank">View</a>';
+                    html += '</div></li>';
                 });
-
                 html += '</ul>';
             }
 
-            // Failed imports
             if (results.failed.length > 0) {
-                html += '<h4 class="failed-header">⚠ Failed Imports - Please Review These Files</h4>';
-                html += '<div style="margin-bottom: 10px;">';
-                html += '<button type="button" class="button button-small hpi-copy-failed-files" data-files="' +
-                        escapeHtml(JSON.stringify(results.failed.map(item => item.file))) + '">';
-                html += '<span class="dashicons dashicons-clipboard" style="font-size: 16px; line-height: 1.2;"></span> ';
-                html += 'Copy Failed Files List';
-                html += '</button>';
-                html += '</div>';
-                html += '<ul class="hpi-results-list">';
-
+                html += '<h4 class="failed-header">&#9888; Failed Imports</h4>';
+                html += '<div style="margin-bottom:10px;">';
+                html += '<button type="button" class="button button-small pi-copy-failed-files" data-files="' +
+                        escapeHtml(JSON.stringify(results.failed.map(function(i) { return i.file; }))) + '">';
+                html += '<span class="dashicons dashicons-clipboard" style="font-size:16px;line-height:1.2;"></span> Copy Failed Files List';
+                html += '</button></div>';
+                html += '<ul class="pi-results-list">';
                 results.failed.forEach(function(item) {
                     html += '<li class="error">';
                     html += '<div class="result-info">';
                     html += '<div class="result-title">' + escapeHtml(item.file) + '</div>';
                     html += '<div class="result-error"><strong>Error:</strong> ' + escapeHtml(item.error) + '</div>';
-                    html += '</div>';
-                    html += '</li>';
+                    html += '</div></li>';
                 });
-
                 html += '</ul>';
             }
 
-            $resultsContent.html(html);
+            $container.html(html);
 
-            // Add click handler for copy button
-            $('.hpi-copy-failed-files').on('click', function() {
-                const filesJson = $(this).data('files');
-                const files = JSON.parse(filesJson);
-                const filesList = files.join('\n');
-
-                // Copy to clipboard
+            $container.find('.pi-copy-failed-files').on('click', function() {
+                const files = JSON.parse($(this).data('files'));
+                const text = files.join('\n');
                 if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(filesList).then(function() {
+                    navigator.clipboard.writeText(text).then(function() {
                         showNotice('success', 'Failed files list copied to clipboard!');
-                    }).catch(function() {
-                        fallbackCopy(filesList);
-                    });
+                    }).catch(function() { fallbackCopy(text); });
                 } else {
-                    fallbackCopy(filesList);
+                    fallbackCopy(text);
                 }
             });
         }
 
-        // Fallback copy function for older browsers
+        // =========================================================
+        // Phase 2: pending media upload
+        // =========================================================
+
+        function showPendingMediaUI(pendingImages, pendingDocs, $targetWrapper) {
+            const allCount = pendingImages.length + pendingDocs.length;
+
+            const imageSet = new Set(pendingImages.map(function(f) { return f.toLowerCase(); }));
+            const docSet   = new Set(pendingDocs.map(function(f)   { return f.toLowerCase(); }));
+
+            let html = '<div class="pi-card pi-pending-media" id="pi-pending-media-section">';
+            html += '<h3>Step 2 &mdash; Upload Missing Media</h3>';
+            html += '<p>Your posts were imported but <strong>' + allCount + ' file(s)</strong> referenced in the HTML were not found. ';
+            html += 'Select your images and documents <strong>folders</strong> below — only the files that are actually needed will be uploaded.</p>';
+
+            if (pendingImages.length > 0) {
+                html += '<div class="pi-media-picker" style="margin-bottom:16px;">';
+                html += '<label><strong>Images</strong> &mdash; ' + pendingImages.length + ' file(s) needed</label><br>';
+                html += '<div id="pi-images-picker-list"><input type="file" webkitdirectory directory multiple style="margin-top:4px;display:block;"></div>';
+                html += '<p class="pi-folder-match" id="pi-images-match" style="margin:4px 0 0;color:#888;">No folder selected</p>';
+                html += '<div id="pi-images-missing-list" style="display:none;margin-top:6px;"></div>';
+                html += '<button type="button" class="button button-small" id="pi-add-images-folder" style="margin-top:8px;display:none;">+ Add another images folder</button>';
+                html += '</div>';
+            }
+
+            if (pendingDocs.length > 0) {
+                html += '<div class="pi-media-picker" style="margin-bottom:16px;">';
+                html += '<label><strong>Documents</strong> &mdash; ' + pendingDocs.length + ' file(s) needed</label><br>';
+                html += '<div id="pi-docs-picker-list"><input type="file" webkitdirectory directory multiple style="margin-top:4px;display:block;"></div>';
+                html += '<p class="pi-folder-match" id="pi-docs-match" style="margin:4px 0 0;color:#888;">No folder selected</p>';
+                html += '<div id="pi-docs-missing-list" style="display:none;margin-top:6px;"></div>';
+                html += '<button type="button" class="button button-small" id="pi-add-docs-folder" style="margin-top:8px;display:none;">+ Add another documents folder</button>';
+                html += '</div>';
+            }
+
+            html += '<button type="button" class="button button-primary" id="pi-upload-media-btn" disabled>Upload Matched Files</button>';
+            html += '<div id="pi-media-upload-progress" style="display:none;margin-top:12px;">';
+            html += '<div class="pi-progress-bar"><div class="pi-progress-bar-fill" id="pi-media-progress-bar" style="width:0%"></div></div>';
+            html += '<p class="pi-progress-text" id="pi-media-progress-text">Uploading...</p>';
+            html += '</div>';
+            html += '<div id="pi-media-upload-results"></div>';
+            html += '</div>';
+
+            $('#pi-pending-media-section').remove();
+            $targetWrapper.append(html);
+
+            // Cumulative matched file collections (accumulate across multiple folder picks)
+            const matchedImages     = [];
+            const matchedImageNames = new Set();
+            const matchedDocs       = [];
+            const matchedDocNames   = new Set();
+
+            function updateUploadButton() {
+                $('#pi-upload-media-btn').prop('disabled', matchedImages.length === 0 && matchedDocs.length === 0);
+            }
+
+            function handleFolderSelect(fileList, nameSet, matchedFiles, matchedNames, $status, $missingList, $addBtn, type) {
+                Array.from(fileList).forEach(function(file) {
+                    const lower = file.name.toLowerCase();
+                    if (nameSet.has(lower) && !matchedNames.has(lower)) {
+                        matchedFiles.push(file);
+                        matchedNames.add(lower);
+                    }
+                });
+
+                const missing = [];
+                nameSet.forEach(function(name) {
+                    if (!matchedNames.has(name)) missing.push(name);
+                });
+
+                let msg = '<span style="color:#00a32a;">&#10003; Found ' + matchedFiles.length + ' of ' + nameSet.size + ' needed ' + type + '</span>';
+                if (missing.length > 0) {
+                    msg += ' &mdash; <span style="color:#d63638;">' + missing.length + ' still missing</span>';
+                }
+                $status.html(msg);
+
+                if (missing.length > 0) {
+                    let listHtml = '<details><summary style="cursor:pointer;color:#d63638;font-size:13px;">Show ' + missing.length + ' missing filenames</summary>';
+                    listHtml += '<div style="max-height:130px;overflow-y:auto;background:#f8f8f8;padding:6px 10px;margin-top:4px;border:1px solid #ddd;font-size:12px;line-height:1.7;">';
+                    listHtml += missing.map(escapeHtml).join('<br>');
+                    listHtml += '</div></details>';
+                    $missingList.html(listHtml).show();
+                    $addBtn.show();
+                } else {
+                    $missingList.hide();
+                    $addBtn.hide();
+                }
+
+                updateUploadButton();
+            }
+
+            function attachImagePicker($input) {
+                $input.on('change', function() {
+                    handleFolderSelect(this.files, imageSet, matchedImages, matchedImageNames,
+                        $('#pi-images-match'), $('#pi-images-missing-list'), $('#pi-add-images-folder'), 'images');
+                });
+            }
+
+            function attachDocPicker($input) {
+                $input.on('change', function() {
+                    handleFolderSelect(this.files, docSet, matchedDocs, matchedDocNames,
+                        $('#pi-docs-match'), $('#pi-docs-missing-list'), $('#pi-add-docs-folder'), 'documents');
+                });
+            }
+
+            if (pendingImages.length > 0) {
+                attachImagePicker($('#pi-images-picker-list').find('input[type=file]'));
+                $('#pi-add-images-folder').on('click', function() {
+                    const $input = $('<input type="file" webkitdirectory directory multiple style="display:block;margin-top:6px;">');
+                    $('#pi-images-picker-list').append($input);
+                    attachImagePicker($input);
+                    $input[0].click();
+                });
+            }
+
+            if (pendingDocs.length > 0) {
+                attachDocPicker($('#pi-docs-picker-list').find('input[type=file]'));
+                $('#pi-add-docs-folder').on('click', function() {
+                    const $input = $('<input type="file" webkitdirectory directory multiple style="display:block;margin-top:6px;">');
+                    $('#pi-docs-picker-list').append($input);
+                    attachDocPicker($input);
+                    $input[0].click();
+                });
+            }
+
+            $('#pi-upload-media-btn').on('click', function() {
+                const allFiles = matchedImages.concat(matchedDocs);
+                if (!allFiles.length) return;
+
+                const $btn      = $(this);
+                const $progress = $('#pi-media-upload-progress');
+                const $bar      = $('#pi-media-progress-bar');
+                const $text     = $('#pi-media-progress-text');
+                const $results  = $('#pi-media-upload-results');
+
+                const batchSize = 15;
+                const batches   = [];
+                for (let i = 0; i < allFiles.length; i += batchSize) {
+                    batches.push(allFiles.slice(i, i + batchSize));
+                }
+
+                let imagesUpdated = 0;
+                let docsUpdated   = 0;
+                let postsUpdated  = 0;
+                let stillMissing  = [];
+
+                $btn.prop('disabled', true).text('Uploading...');
+                $progress.show();
+                $results.html('');
+
+                function uploadBatch(index) {
+                    if (index >= batches.length) {
+                        $btn.prop('disabled', false).text('Upload Matched Files');
+                        $progress.hide();
+
+                        let html = '<div class="pi-notice success" style="margin-top:12px;">';
+                        html += '<strong>Done!</strong> ' + imagesUpdated + ' image(s) and ' + docsUpdated + ' document(s) uploaded across ' + postsUpdated + ' post(s).';
+                        html += '</div>';
+
+                        if (stillMissing.length > 0) {
+                            const unique = stillMissing.filter(function(v, i, a) { return a.indexOf(v) === i; });
+                            html += '<p style="margin-top:8px;"><strong>Still missing (' + unique.length + '):</strong> ' + unique.map(escapeHtml).join(', ') + '</p>';
+                        }
+
+                        $results.html(html);
+                        return;
+                    }
+
+                    $bar.css('width', Math.round(((index) / batches.length) * 100) + '%');
+                    $text.text('Batch ' + (index + 1) + ' of ' + batches.length + '...');
+
+                    const formData = new FormData();
+                    formData.append('action', 'post_importer_upload_media');
+                    formData.append('nonce', postImporterAjax.nonce);
+                    batches[index].forEach(function(f) {
+                        formData.append('media_files[]', f);
+                    });
+
+                    $.ajax({
+                        url: postImporterAjax.ajaxurl,
+                        type: 'POST',
+                        data: formData,
+                        processData: false,
+                        contentType: false,
+                        success: function(response) {
+                            if (response.success && response.data.results) {
+                                const r   = response.data.results;
+                                imagesUpdated += r.images_updated || 0;
+                                docsUpdated   += r.docs_updated   || 0;
+                                postsUpdated  += r.posts_updated  || 0;
+                                if (r.still_missing) {
+                                    stillMissing = stillMissing.concat(r.still_missing);
+                                }
+                            }
+                            uploadBatch(index + 1);
+                        },
+                        error: function(xhr, status, error) {
+                            $results.html('<div class="pi-notice error">Batch ' + (index + 1) + ' failed: ' + escapeHtml(error) + '</div>');
+                            $btn.prop('disabled', false).text('Upload Matched Files');
+                            $progress.hide();
+                        }
+                    });
+                }
+
+                uploadBatch(0);
+            });
+        }
+
+        // =========================================================
+        // Shared helpers
+        // =========================================================
+
+        function showNotice(type, message) {
+            const $notice = $('<div class="pi-notice ' + type + '">' + escapeHtml(message) + '</div>');
+            $('.pi-card').first().prepend($notice);
+            setTimeout(function() {
+                $notice.fadeOut(function() { $(this).remove(); });
+            }, 5000);
+        }
+
         function fallbackCopy(text) {
             const textarea = document.createElement('textarea');
             textarea.value = text;
@@ -303,254 +512,25 @@
             textarea.select();
             try {
                 document.execCommand('copy');
-                showNotice('success', 'Failed files list copied to clipboard!');
+                showNotice('success', 'Copied to clipboard!');
             } catch (err) {
                 showNotice('error', 'Failed to copy to clipboard');
             }
             document.body.removeChild(textarea);
         }
 
-        // Show notice
-        function showNotice(type, message) {
-            const $notice = $('<div class="hpi-notice ' + type + '">' + escapeHtml(message) + '</div>');
-            $form.before($notice);
-
-            setTimeout(function() {
-                $notice.fadeOut(function() {
-                    $(this).remove();
-                });
-            }, 5000);
+        function sprintf(format) {
+            const args = Array.prototype.slice.call(arguments, 1);
+            let i = 0;
+            return format.replace(/%[sd]/g, function() { return args[i++]; });
         }
 
-        // Escape HTML
         function escapeHtml(text) {
-            if (!text) {
-                return '';
-            }
-            const map = {
-                '&': '&amp;',
-                '<': '&lt;',
-                '>': '&gt;',
-                '"': '&quot;',
-                "'": '&#039;'
-            };
+            if (!text) return '';
+            const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
             return String(text).replace(/[&<>"']/g, function(m) { return map[m]; });
         }
 
-        // File input change handler - trigger preview
-        $fileInput.on('change', function() {
-            const fileCount = this.files.length;
-            if (fileCount > 0) {
-                console.log('Selected ' + fileCount + ' file(s)');
-
-                // Show preview for first file
-                previewFirstFile(this.files[0]);
-            } else {
-                // Hide preview if no files selected
-                $('#hpi-preview').hide();
-            }
-        });
-
-        // Preview first file function
-        function previewFirstFile(file) {
-            const $preview = $('#hpi-preview');
-            const $previewContent = $('#hpi-preview-content');
-
-            // Show preview section with loading state
-            $preview.show();
-            $previewContent.html(
-                '<div class="hpi-preview-loading">' +
-                '<span class="spinner is-active"></span>' +
-                '<p>Loading preview...</p>' +
-                '</div>'
-            );
-
-            // Hide results if visible
-            $results.hide();
-
-            // Prepare form data
-            const formData = new FormData();
-            formData.append('action', 'hpi_preview_file');
-            formData.append('nonce', hpiAjax.nonce);
-            formData.append('preview_file', file);
-
-            // Send AJAX request
-            $.ajax({
-                url: hpiAjax.ajaxurl,
-                type: 'POST',
-                data: formData,
-                processData: false,
-                contentType: false,
-                success: function(response) {
-                    if (response.success) {
-                        displayPreview(response.data);
-                    } else {
-                        const errorMsg = (response.data && response.data.message) ? response.data.message : 'Could not load preview';
-                        $previewContent.html(
-                            '<div class="hpi-notice error">' +
-                            '<strong>Preview Error:</strong> ' + escapeHtml(errorMsg) +
-                            '</div>'
-                        );
-                    }
-                },
-                error: function(xhr, status, error) {
-                    $previewContent.html(
-                        '<div class="hpi-notice error">' +
-                        '<strong>Error:</strong> Could not load preview. ' + escapeHtml(error) +
-                        '</div>'
-                    );
-                }
-            });
-        }
-
-        // Display preview data
-        function displayPreview(data) {
-            let html = '<div class="hpi-preview-data">';
-
-            html += '<div class="hpi-preview-item">';
-            html += '<strong>File:</strong> ' + escapeHtml(data.file_name);
-            html += '</div>';
-
-            html += '<div class="hpi-preview-item">';
-            html += '<strong>Title:</strong> <span class="hpi-preview-title">' + escapeHtml(data.title) + '</span>';
-            html += '</div>';
-
-            html += '<div class="hpi-preview-item">';
-            html += '<strong>Date:</strong> <span class="hpi-preview-date">' + escapeHtml(data.date) + '</span>';
-            html += '</div>';
-
-            html += '<div class="hpi-preview-item">';
-            html += '<strong>First Image:</strong> <span class="hpi-preview-date">' + escapeHtml(data.first_image) + '</span>';
-            html += '</div>';
-
-            html += '<div class="hpi-preview-item">';
-            html += '<strong>Content Preview:</strong> <span class="hpi-preview-length">(' + data.content_full + ')</span>';
-            html += '<div class="hpi-preview-content-text">' + data.content + '</div>';
-            html += '</div>';
-
-            html += '<div class="hpi-notice success">';
-            html += '<strong>✓ Preview successful!</strong> The data looks good. You can now proceed with the import.';
-            html += '</div>';
-
-            html += '</div>';
-
-            $('#hpi-preview-content').html(html);
-        }
-
-        // Folder browser functionality
-        let currentFolderPath = '';
-
-        // Browse folder button handler
-        $('#hpi-browse-folder').on('click', function() {
-            openFolderBrowser();
-        });
-
-        // Open folder browser modal
-        function openFolderBrowser(path) {
-            $('#hpi-folder-browser-modal').fadeIn();
-            loadFolders(path || '');
-        }
-
-        // Close modal handlers
-        $('#hpi-folder-browser-modal .hpi-modal-close, #hpi-folder-cancel').on('click', function() {
-            $('#hpi-folder-browser-modal').fadeOut();
-        });
-
-        // Click outside modal to close
-        $('#hpi-folder-browser-modal').on('click', function(e) {
-            if ($(e.target).is('#hpi-folder-browser-modal')) {
-                $(this).fadeOut();
-            }
-        });
-
-        // Select folder button
-        $('#hpi-folder-select').on('click', function() {
-            if (currentFolderPath) {
-                $('#hpi-images-folder').val(currentFolderPath);
-                $('#hpi-folder-browser-modal').fadeOut();
-            }
-        });
-
-        // Load folders via AJAX
-        function loadFolders(path) {
-            const $folderList = $('#hpi-folder-list');
-
-            $folderList.html(
-                '<div class="hpi-folder-loading">' +
-                '<span class="spinner is-active"></span>' +
-                '<p>Loading folders...</p>' +
-                '</div>'
-            );
-
-            $.ajax({
-                url: hpiAjax.ajaxurl,
-                type: 'POST',
-                data: {
-                    action: 'hpi_browse_folders',
-                    nonce: hpiAjax.nonce,
-                    path: path
-                },
-                success: function(response) {
-                    if (response.success) {
-                        displayFolders(response.data);
-                    } else {
-                        const errorMsg = (response.data && response.data.message) ? response.data.message : 'Could not load folders';
-                        $folderList.html(
-                            '<div class="hpi-folder-empty">' +
-                            '<strong>Error:</strong> ' + escapeHtml(errorMsg) +
-                            '</div>'
-                        );
-                    }
-                },
-                error: function() {
-                    $folderList.html(
-                        '<div class="hpi-folder-empty">' +
-                        '<strong>Error:</strong> Could not load folders.' +
-                        '</div>'
-                    );
-                }
-            });
-        }
-
-        // Display folders in the list
-        function displayFolders(data) {
-            currentFolderPath = data.current_path;
-            $('#hpi-current-path').text(data.current_path);
-
-            const $folderList = $('#hpi-folder-list');
-            let html = '';
-
-            // Add parent directory option if available
-            if (data.parent_path) {
-                html += '<div class="hpi-folder-item parent-folder" data-path="' + escapeHtml(data.parent_path) + '">';
-                html += '<span class="hpi-folder-icon">↰</span>';
-                html += '<span class="hpi-folder-name">..</span>';
-                html += '</div>';
-            }
-
-            // Add folders
-            if (data.folders.length === 0) {
-                html += '<div class="hpi-folder-empty">No accessible subdirectories found.</div>';
-            } else {
-                data.folders.forEach(function(folder) {
-                    html += '<div class="hpi-folder-item" data-path="' + escapeHtml(folder.path) + '">';
-                    html += '<span class="hpi-folder-icon">📁</span>';
-                    html += '<span class="hpi-folder-name">' + escapeHtml(folder.name) + '</span>';
-                    if (folder.has_subdirs) {
-                        html += '<span class="hpi-folder-arrow">→</span>';
-                    }
-                    html += '</div>';
-                });
-            }
-
-            $folderList.html(html);
-
-            // Add click handlers to folder items
-            $('.hpi-folder-item').on('click', function() {
-                const path = $(this).data('path');
-                loadFolders(path);
-            });
-        }
     });
 
 })(jQuery);
